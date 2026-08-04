@@ -4,7 +4,7 @@
 # Run once before the demo to prepare all 3 hosts.
 
 - name: "Phase 0 — Prepare demo hosts"
-  hosts: app_hosts
+  hosts: "{{ target_vms | default('all') }}"
   become: true
 
   tasks:
