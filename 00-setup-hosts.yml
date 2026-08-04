@@ -6,7 +6,11 @@
 - name: "Phase 0 — Prepare demo hosts"
   hosts: "{{ target_vms | default('all') }}"
   become: true
-
+  vars:
+    demo_domain: app-demo.example.com
+    tls_cert_path: /etc/pki/tls/certs/demo.crt
+    tls_key_path: /etc/pki/tls/private/demo.key
+    
   tasks:
     - name: Install nginx and OpenSSL
       ansible.builtin.dnf:
