@@ -1,5 +1,5 @@
 - name: test connection
-  hosts: unifai-poc
+  hosts: unifai-poc-control-vm
   tasks:
     - name: rune uname command
       command: "uname -a"
