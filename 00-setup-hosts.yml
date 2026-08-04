@@ -1,0 +1,90 @@
+---
+# Phase 0 — Initial Setup
+# Installs nginx, generates a self-signed TLS cert, deploys the base SSL config.
+# Run once before the demo to prepare all 3 hosts.
+
+- name: "Phase 0 — Prepare demo hosts"
+  hosts: app_hosts
+  become: true
+
+  tasks:
+    - name: Install nginx and OpenSSL
+      ansible.builtin.dnf:
+        name:
+          - nginx
+          - mod_ssl
+          - openssl
+          - crypto-policies
+          - crypto-policies-scripts
+        state: present
+
+    - name: Ensure TLS directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/pki/tls/certs
+        - /etc/pki/tls/private
+
+    - name: Generate self-signed TLS certificate
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365
+          -newkey rsa:2048
+          -keyout {{ tls_key_path }}
+          -out {{ tls_cert_path }}
+          -subj "/CN={{ demo_domain }}"
+        creates: "{{ tls_cert_path }}"
+
+    - name: Set key file permissions
+      ansible.builtin.file:
+        path: "{{ tls_key_path }}"
+        mode: "0600"
+
+    - name: Remove default nginx SSL config if present
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/ssl.conf
+        state: absent
+
+    - name: Deploy base SSL config
+      ansible.builtin.template:
+        src: ../templates/demo-ssl.conf.j2
+        dest: /etc/nginx/conf.d/demo-ssl.conf
+        mode: "0644"
+      notify: restart nginx
+
+    - name: Ensure crypto-policy is DEFAULT (clean baseline)
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      changed_when: true
+
+    - name: Enable and start nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Open firewall for HTTPS
+      ansible.posix.firewalld:
+        port: 443/tcp
+        permanent: true
+        state: enabled
+        immediate: true
+      ignore_errors: true
+
+    - name: Verify HTTPS endpoint
+      ansible.builtin.uri:
+        url: "https://localhost/api/health"
+        validate_certs: false
+      register: health_check
+
+    - name: Show health check result
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} → {{ health_check.json }}"
+
+  handlers:
+    - name: restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
