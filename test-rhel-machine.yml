@@ -1,0 +1,5 @@
+- name: test connection
+  hosts: all
+  tasks:
+    - name: rune uname command
+      command: "uname -a"
