@@ -1,0 +1,49 @@
+---
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  PHASE 1 — Routine Errata Lands                                ║
+# ║                                                                  ║
+# ║  Satellite pushes RHSA-2026:0847 — an updated crypto-policies   ║
+# ║  / OpenSSL default — to app-01 and app-02 during the scheduled  ║
+# ║  maintenance window. The errata applies cleanly.                 ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+# In a real environment, Satellite would push the RPM update.
+# Here we simulate by switching the system crypto-policy to FUTURE,
+# which disables CBC-mode SHA-1 ciphers (AES128-SHA, AES256-SHA).
+
+- name: "Phase 1 — Apply crypto-policies errata (RHSA-2026:0847)"
+  hosts: app_hosts
+  become: true
+
+  tasks:
+    - name: Show current crypto-policy (before)
+      ansible.builtin.command:
+        cmd: update-crypto-policies --show
+      register: policy_before
+      changed_when: false
+
+    - name: Display current policy
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} crypto-policy BEFORE errata: {{ policy_before.stdout }}"
+
+    # - name: Apply FUTURE crypto-policy (simulates errata)
+    #   ansible.builtin.command:
+    #     cmd: update-crypto-policies --set FUTURE
+    #   register: policy_apply
+
+    # - name: Show updated crypto-policy (after)
+    #   ansible.builtin.command:
+    #     cmd: update-crypto-policies --show
+    #   register: policy_after
+    #   changed_when: false
+
+    # - name: Display updated policy
+    #   ansible.builtin.debug:
+    #     msg: "{{ inventory_hostname }} crypto-policy AFTER errata: {{ policy_after.stdout }}"
+
+    # - name: Verify — errata applied cleanly, compliance green
+    #   ansible.builtin.assert:
+    #     that:
+    #       - policy_after.stdout == "FUTURE"
+    #     success_msg: "✅ Errata applied cleanly on {{ inventory_hostname }}. Compliance: GREEN."
+    #     fail_msg: "❌ Errata failed to apply on {{ inventory_hostname }}."
