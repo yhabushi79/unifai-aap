@@ -6,21 +6,24 @@
 - name: "Phase 0 — Prepare demo hosts"
   hosts: "{{ target_vms | default('all') }}"
   become: true
-  vars:
-    demo_domain: app-demo.example.com
-    tls_cert_path: /etc/pki/tls/certs/demo.crt
-    tls_key_path: /etc/pki/tls/private/demo.key
-    
+
   tasks:
     - name: Install nginx and OpenSSL
       ansible.builtin.dnf:
         name:
           - nginx
-          - mod_ssl
           - openssl
           - crypto-policies
           - crypto-policies-scripts
         state: present
+
+    # mod_ssl is Apache-only and can pull in httpd, which often holds :443
+    - name: Stop and disable httpd if present (avoids port 443 conflict)
+      ansible.builtin.service:
+        name: httpd
+        state: stopped
+        enabled: false
+      failed_when: false
 
     - name: Ensure TLS directories exist
       ansible.builtin.file:
@@ -44,7 +47,22 @@
     - name: Set key file permissions
       ansible.builtin.file:
         path: "{{ tls_key_path }}"
+        owner: root
+        group: root
         mode: "0600"
+
+    - name: Set cert file permissions
+      ansible.builtin.file:
+        path: "{{ tls_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Restore SELinux context on TLS files
+      ansible.builtin.command:
+        cmd: restorecon -v {{ tls_cert_path }} {{ tls_key_path }}
+      changed_when: false
+      failed_when: false
 
     - name: Remove default nginx SSL config if present
       ansible.builtin.file:
@@ -63,10 +81,44 @@
         cmd: update-crypto-policies --set DEFAULT
       changed_when: true
 
-    - name: Enable and start nginx
+    - name: Validate nginx configuration
+      ansible.builtin.command:
+        cmd: nginx -t
+      register: nginx_test
+      changed_when: false
+      failed_when: false
+
+    - name: Show nginx -t output on failure
+      ansible.builtin.fail:
+        msg: |
+          nginx config test failed:
+          stdout: {{ nginx_test.stdout }}
+          stderr: {{ nginx_test.stderr }}
+      when: nginx_test.rc != 0
+
+    # OpenTLC images often leave a running nginx holding :80 while
+    # systemd still shows the unit as failed — "started" then cannot bind.
+    - name: Stop nginx service if present
       ansible.builtin.service:
         name: nginx
-        state: started
+        state: stopped
+      failed_when: false
+
+    - name: Kill leftover nginx processes holding ports
+      ansible.builtin.shell: |
+        set -e
+        if command -v pkill >/dev/null; then
+          pkill -x nginx || true
+        fi
+        sleep 1
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Enable and restart nginx with new config
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
         enabled: true
 
     - name: Open firewall for HTTPS
